@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>바코드 매칭기</title>
+<!-- iOS Safari 디코더 (Android는 네이티브 BarcodeDetector 사용) -->
+<script src="https://cdn.jsdelivr.net/npm/zxing-wasm@3.0.3/dist/iife/reader/index.js"></script>
+<style>
+:root{
+  --bg:#f0f4f8;--surface:#fff;--surface2:#f7f9fc;--border:#e3e8ef;
+  --text:#1a202c;--text2:#5a6a7e;--text3:#9aacbe;
+  --accent:#7c3aed;--accent-bg:#f5f3ff;
+  --green:#16a34a;--green-bg:#f0fdf4;
+  --red:#dc2626;--red-bg:#fef2f2;
+  --yellow:#ca8a04;
+  --radius:14px;--radius-sm:9px;
+  --mono:'JetBrains Mono',ui-monospace,monospace;--sans:'Noto Sans KR','Segoe UI',sans-serif;
+}
+*{box-sizing:border-box}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);margin:0 auto;max-width:480px;min-height:100vh;padding-bottom:80px}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 16px;position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:10px}
+.logo{width:32px;height:32px;background:var(--accent);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.title{font-weight:800;font-size:16px;flex:1}
+.count-pill{font-size:11px;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:5px 10px;font-weight:600}
+.icon-btn{width:34px;height:34px;border:1px solid var(--border);background:var(--surface);border-radius:9px;cursor:pointer;font-size:15px}
+.wrap{padding:16px}
+
+/* tabs */
+.tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:60px;z-index:90}
+.tab{flex:1;padding:11px 0;font-size:13px;font-weight:600;font-family:var(--sans);border:none;background:transparent;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent}
+.tab.active{color:var(--accent);border-color:var(--accent)}
+.tab .badge{display:inline-block;min-width:16px;font-size:10px;background:var(--red);color:#fff;border-radius:10px;padding:1px 5px;margin-left:4px}
+
+.page{display:none}.page.show{display:block}
+
+/* scan */
+.scan-btn{width:100%;padding:22px;background:var(--surface);border:2px dashed var(--accent);border-radius:var(--radius);display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;color:var(--accent);font-weight:700;font-size:15px}
+.scan-btn .big{font-size:34px}
+.manual-row{display:flex;gap:8px;margin-top:12px}
+.manual-row input{flex:1;padding:12px 14px;border:2px solid var(--border);border-radius:var(--radius-sm);font-size:14px;font-family:var(--mono);outline:none;background:var(--surface);color:var(--text)}
+.manual-row input:focus{border-color:var(--accent)}
+.manual-row button{padding:0 18px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);font-weight:700;cursor:pointer;font-size:14px}
+
+/* result card */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:16px;box-shadow:0 2px 12px rgba(0,0,0,.04)}
+.card.matched{border-color:var(--green)}
+.card.unmatched{border-color:var(--yellow)}
+.card-bc{font-family:var(--mono);font-size:13px;color:var(--text2);word-break:break-all}
+.card-status{font-size:12px;font-weight:700;margin:6px 0 12px;display:flex;align-items:center;gap:6px}
+.card-status.ok{color:var(--green)}.card-status.warn{color:var(--yellow)}
+.name-input{width:100%;padding:12px;border:2px solid var(--accent);border-radius:var(--radius-sm);font-size:15px;font-weight:600;font-family:var(--sans);outline:none;background:var(--surface);color:var(--text)}
+.row-btns{display:flex;gap:8px;margin-top:12px}
+.btn{flex:1;padding:12px;border:none;border-radius:var(--radius-sm);font-weight:700;font-size:14px;cursor:pointer;font-family:var(--sans)}
+.btn.primary{background:var(--accent);color:#fff}
+.btn.ghost{background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
+.btn.danger{background:var(--red-bg);color:var(--red)}
+.suggest{margin-top:10px}
+.suggest-item{padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:6px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.suggest-item:active{background:var(--accent-bg)}
+.muted{color:var(--text3);font-size:12px}
+
+/* list */
+.search{width:100%;padding:11px 14px;border:2px solid var(--border);border-radius:var(--radius-sm);font-size:13px;outline:none;background:var(--surface);color:var(--text);margin-bottom:12px;font-family:var(--sans)}
+.item{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.item .nm{font-size:14px;font-weight:600}
+.item .bc{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px;word-break:break-all}
+.item .extra{font-size:10px;color:var(--accent);margin-top:2px}
+.item-acts{display:flex;gap:6px;flex-shrink:0}
+.mini{width:30px;height:30px;border:1px solid var(--border);background:var(--surface);border-radius:7px;cursor:pointer;font-size:13px}
+.empty{text-align:center;color:var(--text3);padding:40px 16px;font-size:13px}
+
+/* queue */
+.q-item{background:var(--surface);border:1px solid var(--yellow);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.q-item .bc{font-family:var(--mono);font-size:13px;font-weight:600}
+.q-item .tm{font-size:10px;color:var(--text3);margin-top:2px}
+
+/* camera */
+.camera-wrap{display:none;position:fixed;inset:0;background:#000;z-index:200;flex-direction:column}
+.camera-wrap.open{display:flex}
+#scanner-video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover}
+.scan-ui{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+.scan-frame{width:270px;height:150px;border:2px solid rgba(255,255,255,.7);border-radius:12px;position:relative;box-shadow:0 0 0 9999px rgba(0,0,0,.55)}
+.scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#7c3aed,transparent);animation:sl 1.8s linear infinite}
+@keyframes sl{0%{top:0}100%{top:100%}}
+.corner{position:absolute;width:18px;height:18px;border-color:#7c3aed;border-style:solid;border-width:0}
+.corner.tl{top:-2px;left:-2px;border-top-width:3px;border-left-width:3px;border-radius:4px 0 0 0}
+.corner.tr{top:-2px;right:-2px;border-top-width:3px;border-right-width:3px;border-radius:0 4px 0 0}
+.corner.bl{bottom:-2px;left:-2px;border-bottom-width:3px;border-left-width:3px;border-radius:0 0 0 4px}
+.corner.br{bottom:-2px;right:-2px;border-bottom-width:3px;border-right-width:3px;border-radius:0 0 4px 0}
+.scan-hint{color:rgba(255,255,255,.85);font-size:13px;margin-top:22px}
+.cam-close{position:absolute;top:20px;right:20px;width:40px;height:40px;background:rgba(0,0,0,.6);border:1px solid rgba(255,255,255,.2);border-radius:50%;color:#fff;font-size:20px;cursor:pointer;z-index:10;pointer-events:all}
+#zoom-control{display:none;position:absolute;left:24px;right:24px;bottom:16px;align-items:center;gap:12px;z-index:5}
+#zoom-control span{color:#fff;font-size:20px;font-weight:800;text-shadow:0 1px 4px rgba(0,0,0,.7)}
+#zoom-slider{flex:1;height:30px;accent-color:#7c3aed}
+
+/* toast */
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(12px);background:var(--text);color:#fff;padding:11px 20px;border-radius:30px;font-size:13px;opacity:0;transition:all .25s;z-index:999;pointer-events:none;white-space:nowrap;max-width:calc(100% - 32px)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.ok{background:var(--green)}.toast.err{background:var(--red)}.toast.warn{background:var(--yellow)}
+
+/* menu sheet */
+.sheet-mask{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:300}
+.sheet-mask.open{display:block}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-radius:18px 18px 0 0;padding:18px;max-width:480px;margin:0 auto}
+.sheet h3{margin:0 0 14px;font-size:15px}
+.sheet-btn{width:100%;padding:13px;border:1px solid var(--border);background:var(--surface2);border-radius:var(--radius-sm);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px;text-align:left;font-family:var(--sans);color:var(--text)}
+.sheet-btn small{display:block;color:var(--text3);font-weight:400;font-size:11px;margin-top:2px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">🏷️</div>
+  <div class="title">바코드 매칭기</div>
+  <div class="count-pill" id="count-pill">0건</div>
+  <button class="icon-btn" onclick="openMenu()">⋯</button>
+</div>
+
+<div class="tabs">
+  <button class="tab active" id="tab-scan" onclick="goTab('scan')">매칭</button>
+  <button class="tab" id="tab-list" onclick="goTab('list')">목록</button>
+  <button class="tab" id="tab-queue" onclick="goTab('queue')">미매칭<span class="badge" id="q-badge" style="display:none">0</span></button>
+</div>
+
+<!-- 매칭 -->
+<div class="page show" id="page-scan">
+  <div class="wrap">
+    <button class="scan-btn" onclick="openCam()">
+      <span class="big">📷</span>
+      <span>바코드 스캔</span>
+    </button>
+    <div class="manual-row">
+      <input id="manual" placeholder="또는 바코드 직접 입력" inputmode="numeric"
+        onkeydown="if(event.key==='Enter')handleManual()">
+      <button onclick="handleManual()">확인</button>
+    </div>
+    <div id="result"></div>
+  </div>
+</div>
+
+<!-- 목록 -->
+<div class="page" id="page-list">
+  <div class="wrap">
+    <input class="search" id="list-search" placeholder="🔍 제품명 / 바코드 검색" oninput="renderList()">
+    <div id="list-body"></div>
+  </div>
+</div>
+
+<!-- 미매칭 큐 -->
+<div class="page" id="page-queue">
+  <div class="wrap">
+    <p class="muted">스캔했지만 아직 이름을 안 붙인 바코드입니다. 탭하면 매칭 화면으로 갑니다.</p>
+    <div id="queue-body"></div>
+  </div>
+</div>
+
+<!-- Camera -->
+<div class="camera-wrap" id="camWrap">
+  <video id="scanner-video" autoplay playsinline muted></video>
+  <div class="scan-ui">
+    <div class="scan-frame">
+      <div class="scan-line"></div>
+      <div class="corner tl"></div><div class="corner tr"></div>
+      <div class="corner bl"></div><div class="corner br"></div>
+    </div>
+    <div class="scan-hint">바코드를 프레임 안에 맞춰주세요</div>
+  </div>
+  <div id="zoom-control"><span>−</span><input id="zoom-slider" type="range" min="1" max="5" step="0.1" value="1"><span>＋</span></div>
+  <button class="cam-close" onclick="closeCam()">✕</button>
+</div>
+
+<!-- Menu sheet -->
+<div class="sheet-mask" id="menu-mask" onclick="if(event.target===this)closeMenu()">
+  <div class="sheet">
+    <h3>데이터 / 백데이터</h3>
+    <button class="sheet-btn" onclick="exportJSON()">📤 JSON 내보내기<small>다른 프로그램에서 쓸 마스터 백데이터</small></button>
+    <button class="sheet-btn" onclick="exportCSV()">📊 CSV 내보내기<small>엑셀/구글시트용</small></button>
+    <button class="sheet-btn" onclick="document.getElementById('import-file').click()">📥 JSON 가져오기 / 병합<small>기존 마스터에 합치기</small></button>
+    <button class="sheet-btn" onclick="importFromSheet()">🔗 시트(워커 URL)에서 가져오기<small>기존 제품목록 불러와 시드</small></button>
+    <button class="sheet-btn danger" style="color:var(--red)" onclick="wipeAll()">🗑️ 전체 삭제</button>
+    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importJSON(this.files[0])">
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- 재사용 모듈 (개발용: 분리 로드. 배포 시 build.py가 난독화하여 인라인) -->
+<script>
+function a0_0x15ce(_0x27ce3a,_0x2da67f){_0x27ce3a=_0x27ce3a-0x187;const _0x36198e=a0_0xda5d();let _0x2c760a=_0x36198e[_0x27ce3a];if(a0_0x15ce['Mdzrby']===undefined){var _0x3a3400=function(_0x7ce39c){const _0x5c109b='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=';let _0x4b3ee5='',_0x1e7bf2='',_0x36a7a0=_0x4b3ee5+_0x3a3400,_0x422e77=(''+function(){return 0x0;})['indexOf']('\x0a')!==-0x1;for(let _0x425c96=0x0,_0x17ca66,_0x414476,_0x1e9b8a=0x0;_0x414476=_0x7ce39c['charAt'](_0x1e9b8a++);~_0x414476&&(_0x17ca66=_0x425c96%0x4?_0x17ca66*0x40+_0x414476:_0x414476,_0x425c96++%0x4)?_0x4b3ee5+=_0x422e77||_0x36a7a0['charCodeAt'](_0x1e9b8a+0xa)-0xa!==0x0?String['fromCharCode'](0xff&_0x17ca66>>(-0x2*_0x425c96&0x6)):_0x425c96:0x0){_0x414476=_0x5c109b['indexOf'](_0x414476);}for(let _0xbd9d3=0x0,_0x3e35eb=_0x4b3ee5['length'];_0xbd9d3<_0x3e35eb;_0xbd9d3++){_0x1e7bf2+='%'+('00'+_0x4b3ee5['charCodeAt'](_0xbd9d3)['toString'](0x10))['slice'](-0x2);}return decodeURIComponent(_0x1e7bf2);};a0_0x15ce['OEGbFu']=_0x3a3400,a0_0x15ce['rkAsbk']={},a0_0x15ce['Mdzrby']=!![];}const _0xda5d45=_0x36198e[0x0],_0x15ce8d=_0x27ce3a+_0xda5d45,_0x23d774=a0_0x15ce['rkAsbk'][_0x15ce8d];if(!_0x23d774){const _0x19096e=function(_0x408946){this['IArQHc']=_0x408946,this['HcXQkt']=[0x1,0x0,0x0],this['bypuAu']=function(){return'newState';},this['pyZgFE']='\x5cw+\x20*\x5c(\x5c)\x20*{\x5cw+\x20*',this['nnahUG']='[\x27|\x22].+[\x27|\x22];?\x20*}';};_0x19096e['prototype']['DpkgXu']=function(){const _0x3cc911=new RegExp(this['pyZgFE']+this['nnahUG']),_0x4b7d1e=_0x3cc911['test'](this['bypuAu']['toString']())?--this['HcXQkt'][0x1]:--this['HcXQkt'][0x0];return this['zOYPvi'](_0x4b7d1e);},_0x19096e['prototype']['zOYPvi']=function(_0x248e40){if(!Boolean(~_0x248e40))return _0x248e40;return this['DtLFWa'](this['IArQHc']);},_0x19096e['prototype']['DtLFWa']=function(_0x4b3328){for(let _0x514e60=0x0,_0xc47d92=this['HcXQkt']['length'];_0x514e60<_0xc47d92;_0x514e60++){this['HcXQkt']['push'](Math['round'](Math['random']())),_0xc47d92=this['HcXQkt']['length'];}return _0x4b3328(this['HcXQkt'][0x0]);},(''+function(){return 0x0;})['indexOf']('\x0a')===-0x1&&new _0x19096e(a0_0x15ce)['DpkgXu'](),_0x2c760a=a0_0x15ce['OEGbFu'](_0x2c760a),a0_0x15ce['rkAsbk'][_0x15ce8d]=_0x2c760a;}else _0x2c760a=_0x23d774;return _0x2c760a;}const a0_0x30604d=a0_0x15ce;(function(_0x310774,_0x1da16f){const _0x1a21c5=a0_0x15ce,_0x1ccda6=_0x310774();while(!![]){try{const _0xdf9c1a=parseInt(_0x1a21c5(0x1a6))/0x1*(-parseInt(_0x1a21c5(0x19e))/0x2)+-parseInt(_0x1a21c5(0x19b))/0x3*(-parseInt(_0x1a21c5(0x217))/0x4)+-parseInt(_0x1a21c5(0x1e5))/0x5+-parseInt(_0x1a21c5(0x1b2))/0x6*(-parseInt(_0x1a21c5(0x23a))/0x7)+-parseInt(_0x1a21c5(0x1c8))/0x8+-parseInt(_0x1a21c5(0x21f))/0x9+parseInt(_0x1a21c5(0x22f))/0xa;if(_0xdf9c1a===_0x1da16f)break;else _0x1ccda6['push'](_0x1ccda6['shift']());}catch(_0x307883){_0x1ccda6['push'](_0x1ccda6['shift']());}}}(a0_0xda5d,0x6f019),function(_0x4d0621){'use strict';const _0x420daf=a0_0x15ce,_0x3ef174={'iVRiB':function(_0x283d5d,_0x1a2a96,_0x5c301e){return _0x283d5d(_0x1a2a96,_0x5c301e);},'CsZLj':function(_0x422207,_0x44cc5d){return _0x422207===_0x44cc5d;},'tGRav':function(_0x1aa65d,_0x366c1d){return _0x1aa65d%_0x366c1d;},'shgOp':function(_0x1c91a0,_0x132cf1){return _0x1c91a0===_0x132cf1;},'vKhRg':function(_0x123b2c,_0x5940e8){return _0x123b2c===_0x5940e8;},'zmOtB':function(_0xf5cac4,_0x47c891){return _0xf5cac4+_0x47c891;},'iNNaB':function(_0x5812ae,_0x3991d1){return _0x5812ae===_0x3991d1;},'EiDcX':function(_0x4c5c44,_0x4c2b60){return _0x4c5c44+_0x4c2b60;},'ujViJ':function(_0x5582c2,_0x2bf8e7){return _0x5582c2(_0x2bf8e7);},'nWMxL':function(_0x1062fb,_0x4446d9){return _0x1062fb+_0x4446d9;},'rbtqd':function(_0x40731c,_0x1b6a23){return _0x40731c+_0x1b6a23;},'ttwux':function(_0x3b7b17,_0x1e5b9f){return _0x3b7b17||_0x1e5b9f;},'zMTnr':function(_0x26866b,_0x3c9dd4){return _0x26866b>=_0x3c9dd4;}};function _0x2c5f0a(_0x485c8a){const _0x41cadb=a0_0x15ce,_0x4f9fa4=String(_0x485c8a)['replace'](/\D/g,'');if(_0x4f9fa4[_0x41cadb(0x1d7)]!==0xd)return![];let _0x520882=0x0;for(let _0x1c3e88=0x0;_0x1c3e88<0xc;_0x1c3e88++)_0x520882+=_0x3ef174['iVRiB'](parseInt,_0x4f9fa4[_0x1c3e88],0xa)*(_0x3ef174[_0x41cadb(0x1f5)](_0x3ef174[_0x41cadb(0x1a3)](_0x1c3e88,0x2),0x0)?0x1:0x3);const _0x59d80a=(0xa-_0x520882%0xa)%0xa;return _0x59d80a===_0x3ef174[_0x41cadb(0x1e4)](parseInt,_0x4f9fa4[0xc],0xa);}function _0x2fdd36(_0xeff82b){const _0x2afe88=a0_0x15ce;let _0x5ee83e=String(_0xeff82b||'')[_0x2afe88(0x1b3)]();const _0x23e9c1=_0x5ee83e['match'](/\(01\)(\d{13,14})/);if(_0x23e9c1){const _0x29709f=_0x23e9c1[0x1];return _0x29709f[_0x2afe88(0x1d7)]===0xe?_0x29709f[_0x2afe88(0x1d5)](0x1):_0x29709f;}const _0x5448ce=_0x5ee83e[_0x2afe88(0x1fe)](/^01(\d{14})/);if(_0x5448ce){const _0x20fc52=_0x5448ce[0x1];return _0x20fc52[_0x2afe88(0x1d7)]===0xe?_0x20fc52[_0x2afe88(0x1d5)](0x1):_0x20fc52;}_0x5ee83e=_0x5ee83e[_0x2afe88(0x22d)](/[^0-9()]/g,'')[_0x2afe88(0x22d)](/[()]/g,'');const _0x2f3b67=_0x5ee83e[_0x2afe88(0x1d7)];if(_0x2f3b67===0x10&&_0x5ee83e[_0x2afe88(0x1ab)]('01'))return _0x5ee83e[_0x2afe88(0x1d5)](0x3);if(_0x3ef174[_0x2afe88(0x20b)](_0x2f3b67,0xf)&&_0x5ee83e[_0x2afe88(0x1ab)]('01'))return _0x5ee83e[_0x2afe88(0x1d5)](0x2);if(_0x2f3b67===0xe&&_0x5ee83e['startsWith']('0'))return _0x5ee83e['slice'](0x1);if(_0x3ef174[_0x2afe88(0x1f5)](_0x2f3b67,0xe)&&_0x5ee83e[_0x2afe88(0x1ab)]('1'))return _0x5ee83e[_0x2afe88(0x1d5)](0x1);return _0x5ee83e;}function _0x29e6a4(_0x15f8ee){const _0x17c0f3=a0_0x15ce,_0x462695=_0x2fdd36(_0x15f8ee),_0x52709e=new Set([_0x15f8ee,_0x462695]);if(_0x462695[_0x17c0f3(0x1ab)]('2')&&_0x3ef174[_0x17c0f3(0x1ec)](_0x462695[_0x17c0f3(0x1d7)],0xd))_0x52709e[_0x17c0f3(0x225)](_0x3ef174[_0x17c0f3(0x1d1)]('88',_0x462695[_0x17c0f3(0x1d5)](0x3)));if(_0x462695[_0x17c0f3(0x1ab)]('88')&&_0x3ef174['iNNaB'](_0x462695['length'],0xd))_0x52709e[_0x17c0f3(0x225)](_0x3ef174[_0x17c0f3(0x1d1)]('2',_0x462695[_0x17c0f3(0x1d5)](0x3,0xd)));if(_0x3ef174[_0x17c0f3(0x20b)](_0x462695[_0x17c0f3(0x1d7)],0xd)){const _0x14443e=_0x462695[_0x17c0f3(0x1d5)](0x2),_0x246fcc=_0x462695[_0x17c0f3(0x1d5)](0x1);_0x52709e[_0x17c0f3(0x225)](_0x3ef174[_0x17c0f3(0x199)]('88',_0x14443e)),_0x52709e[_0x17c0f3(0x225)]('8'+_0x246fcc),_0x52709e[_0x17c0f3(0x225)](_0x3ef174[_0x17c0f3(0x1dd)](_0x2fdd36,_0x3ef174[_0x17c0f3(0x1c4)]('8',_0x462695))),_0x52709e[_0x17c0f3(0x225)](_0x2fdd36(_0x3ef174[_0x17c0f3(0x239)]('18',_0x246fcc))),_0x52709e[_0x17c0f3(0x225)](_0x2fdd36(_0x17c0f3(0x1c5)+_0x14443e));}return[..._0x52709e];}function _0x5d8c6c(_0x5be068){const _0x52648b=a0_0x15ce,_0x29a635=String(_0x3ef174[_0x52648b(0x20c)](_0x5be068,''))['replace'](/\D/g,'');return _0x3ef174[_0x52648b(0x1ae)](_0x29a635['length'],0xc)?_0x29a635[_0x52648b(0x1d5)](-0xa):null;}_0x4d0621[_0x420daf(0x1eb)]={'isValidEAN13':_0x2c5f0a,'normalize':_0x2fdd36,'variants':_0x29e6a4,'tail':_0x5d8c6c};}(typeof window!==a0_0x30604d(0x1db)?window:this),function(_0x27e57d){const _0x15c383=a0_0x30604d,_0x45d66d={'GRJTi':_0x15c383(0x222),'pnOAP':function(_0x4191a8,_0x45a47b){return _0x4191a8*_0x45a47b;},'GbttX':function(_0x17ab2d,_0x40dec3){return _0x17ab2d/_0x40dec3;},'CVHzY':function(_0x534a9a,_0x79fa2e){return _0x534a9a-_0x79fa2e;},'zfQbJ':function(_0x2e33ed,_0x14f582){return _0x2e33ed+_0x14f582;},'uUsDW':function(_0x3a02ff,_0x3fac5b){return _0x3a02ff+_0x3fac5b;},'PAcFr':function(_0x5305ae,_0x265c11){return _0x5305ae+_0x265c11;},'bCFzr':function(_0x57c233,_0x2ee74c){return _0x57c233<_0x2ee74c;},'oyllF':function(_0x213053,_0x2aa511){return _0x213053&&_0x2aa511;},'hqZaI':function(_0x362e92,_0x41ca5c){return _0x362e92===_0x41ca5c;},'vZuGV':_0x15c383(0x18b),'qVJNd':_0x15c383(0x229),'hklRp':function(_0xbc4c43,_0x5bfd54){return _0xbc4c43(_0x5bfd54);},'wmYpd':function(_0x3add4e,_0x23b22a){return _0x3add4e>_0x23b22a;},'YdFCO':function(_0x3346cf){return _0x3346cf();},'KMOQe':function(_0x20024f,_0x5912d5){return _0x20024f!==_0x5912d5;},'RdzjD':_0x15c383(0x1db),'tRoAl':_0x15c383(0x1df),'vYibG':function(_0x3d10b9,_0x17519e){return _0x3d10b9||_0x17519e;},'LNxAi':_0x15c383(0x1ef),'fUoFG':function(_0x48d6e9,_0x5e2295,_0xfd7724){return _0x48d6e9(_0x5e2295,_0xfd7724);},'kGdkF':_0x15c383(0x220),'MqhUo':_0x15c383(0x19d),'shfEd':_0x15c383(0x1f1),'VcTSs':'qr_code','Msszs':_0x15c383(0x1b8),'EMyzC':_0x15c383(0x1ed),'iWAos':_0x15c383(0x1af),'xNLGp':_0x15c383(0x1cf),'pGrsH':_0x15c383(0x1a2),'zeUQP':_0x15c383(0x227),'QSxbL':_0x15c383(0x226),'vXSaD':_0x15c383(0x214),'mjAcv':_0x15c383(0x188)},_0x59ec7b=(function(){let _0x56a507=!![];return function(_0x4b031e,_0x2362dc){const _0x3f18e8=_0x56a507?function(){const _0x36ef27=a0_0x15ce;if(_0x2362dc){const _0x3b904a=_0x2362dc[_0x36ef27(0x1f3)](_0x4b031e,arguments);return _0x2362dc=null,_0x3b904a;}}:function(){};return _0x56a507=![],_0x3f18e8;};}()),_0x49028f=_0x45d66d[_0x15c383(0x1ac)](_0x59ec7b,this,function(){const _0x13ec10=_0x15c383;return _0x49028f[_0x13ec10(0x221)]()[_0x13ec10(0x1cd)](_0x13ec10(0x222))['toString']()['constructor'](_0x49028f)[_0x13ec10(0x1cd)](_0x45d66d[_0x13ec10(0x21a)]);});_0x45d66d[_0x15c383(0x1a1)](_0x49028f);'use strict';const _0x27bfc2=[_0x15c383(0x1c2),_0x45d66d[_0x15c383(0x230)],_0x45d66d[_0x15c383(0x189)],_0x15c383(0x1fc),_0x45d66d[_0x15c383(0x18f)],_0x15c383(0x1d3),_0x45d66d[_0x15c383(0x18e)],_0x45d66d[_0x15c383(0x1ca)],_0x45d66d[_0x15c383(0x1dc)],_0x15c383(0x200),_0x15c383(0x1e2),_0x45d66d['iWAos']],_0x158317=[_0x45d66d['xNLGp'],_0x15c383(0x22a),_0x45d66d['pGrsH'],_0x15c383(0x206),_0x15c383(0x1c9),_0x15c383(0x1ea),_0x15c383(0x1b6),_0x45d66d['zeUQP'],_0x45d66d[_0x15c383(0x193)],_0x45d66d[_0x15c383(0x22c)],_0x45d66d[_0x15c383(0x1a0)],_0x15c383(0x1f2)];function _0x521a85(_0x79fc1c){const _0x5586a6=_0x15c383,_0x3f20d4={'KGfWr':function(_0x3dc3b9,_0x23e09f){return _0x3dc3b9(_0x23e09f);},'MnabF':function(_0x2f8e83,_0x55a825){return _0x45d66d['hklRp'](_0x2f8e83,_0x55a825);},'teazW':function(_0x1cfff8,_0x4ed25e){const _0x2d04e8=a0_0x15ce;return _0x45d66d[_0x2d04e8(0x18c)](_0x1cfff8,_0x4ed25e);},'PZVVw':function(_0x5ca21a,_0x53c822){return _0x5ca21a+_0x53c822;},'PxIId':'BarcodeDetector','eXlzw':function(_0xb064ac,_0x1304e){return _0xb064ac(_0x1304e);},'EAVjc':function(_0x23d72f,_0x17c52d){const _0x2a2429=a0_0x15ce;return _0x45d66d[_0x2a2429(0x1e3)](_0x23d72f,_0x17c52d);},'bPwzK':function(_0x1dacc3){return _0x1dacc3();},'RWvDc':function(_0x243f8e){const _0x51b3e2=a0_0x15ce;return _0x45d66d[_0x51b3e2(0x1a1)](_0x243f8e);},'mDbuh':function(_0x10c8ec){const _0x5a1205=a0_0x15ce;return _0x45d66d[_0x5a1205(0x1a1)](_0x10c8ec);},'iXNhQ':_0x5586a6(0x1ad),'kHVCL':function(_0x585775,_0x2b6e22){return _0x585775(_0x2b6e22);},'DsySn':function(_0x58d59a,_0x464ea6){const _0x3d7b50=_0x5586a6;return _0x45d66d[_0x3d7b50(0x1e1)](_0x58d59a,_0x464ea6);},'TxuSP':_0x45d66d[_0x5586a6(0x1c6)],'DCfmr':_0x45d66d[_0x5586a6(0x1bc)]};_0x79fc1c=_0x45d66d[_0x5586a6(0x20f)](_0x79fc1c,{});const _0x13389d=_0x79fc1c[_0x5586a6(0x1bb)];if(!_0x13389d)throw new Error(_0x45d66d[_0x5586a6(0x21e)]);const _0x4daa30=typeof _0x79fc1c[_0x5586a6(0x1ba)]===_0x5586a6(0x229)?_0x79fc1c[_0x5586a6(0x1ba)]:function(){},_0x4f8e4a=_0x45d66d['hqZaI'](typeof _0x79fc1c[_0x5586a6(0x232)],_0x45d66d[_0x5586a6(0x203)])?_0x79fc1c[_0x5586a6(0x232)]:function(){},_0x23ce11=typeof _0x79fc1c[_0x5586a6(0x21d)]===_0x5586a6(0x229)?_0x79fc1c[_0x5586a6(0x21d)]:function(){},_0xed7922=typeof _0x79fc1c[_0x5586a6(0x1d2)]===_0x45d66d[_0x5586a6(0x203)]?_0x79fc1c['normalize']:function(_0x239580){const _0x3be694=_0x5586a6;return _0x3f20d4[_0x3be694(0x197)](String,_0x239580||'')[_0x3be694(0x1b3)]();},_0x28b255=_0x79fc1c[_0x5586a6(0x187)]||0x3,_0x4e881d=_0x79fc1c[_0x5586a6(0x194)]&&_0x79fc1c[_0x5586a6(0x194)]['w']||0.92,_0x33ce8f=_0x79fc1c[_0x5586a6(0x194)]&&_0x79fc1c[_0x5586a6(0x194)]['h']||0.6,_0x3d9351=_0x79fc1c[_0x5586a6(0x1de)]||_0x27bfc2,_0x147b4d=_0x79fc1c['wasmFormats']||_0x158317;let _0x4b06fc=null,_0x48bd21=![],_0x2340a3=null,_0x53ac99=null,_0x1f959b=[];const _0x37afcf=document[_0x5586a6(0x1e8)](_0x5586a6(0x202)),_0x558b1e=_0x37afcf[_0x5586a6(0x20e)]('2d',{'willReadFrequently':!![]});function _0x4a5c17(){_0x1f959b=[];}function _0x1fa9eb(_0x14e40e){const _0x1a8b75=_0x5586a6,_0x384e0a=_0x3f20d4[_0x1a8b75(0x190)](_0xed7922,_0x14e40e);if(!_0x384e0a)return null;_0x1f959b[_0x1a8b75(0x208)](_0x384e0a);if(_0x3f20d4[_0x1a8b75(0x198)](_0x1f959b[_0x1a8b75(0x1d7)],0x6))_0x1f959b['shift']();const _0x2e40a3={};for(const _0x17a887 of _0x1f959b)_0x2e40a3[_0x17a887]=_0x3f20d4[_0x1a8b75(0x201)](_0x2e40a3[_0x17a887]||0x0,0x1);const _0x2eb0f6=Object[_0x1a8b75(0x1aa)](_0x2e40a3)[_0x1a8b75(0x1b9)]((_0x38de09,_0x5def15)=>_0x5def15[0x1]-_0x38de09[0x1])[0x0];return _0x2eb0f6&&_0x2eb0f6[0x1]>=_0x28b255?_0x2eb0f6[0x0]:null;}function _0x16df4f(){const _0x46c882=_0x5586a6,_0xdb960=_0x13389d['videoWidth'],_0x5c5335=_0x13389d[_0x46c882(0x1cb)];if(!_0xdb960||!_0x5c5335)return null;const _0x4c9974=Math[_0x46c882(0x215)](_0xdb960*_0x4e881d),_0x52077c=Math[_0x46c882(0x215)](_0x45d66d['pnOAP'](_0x5c5335,_0x33ce8f)),_0x1f98c8=Math['floor'](_0x45d66d[_0x46c882(0x1be)](_0xdb960-_0x4c9974,0x2)),_0x5ec116=Math[_0x46c882(0x215)](_0x45d66d[_0x46c882(0x211)](_0x5c5335,_0x52077c)/0x2);return _0x37afcf['width']=_0x4c9974,_0x37afcf[_0x46c882(0x207)]=_0x52077c,_0x558b1e[_0x46c882(0x1f6)](_0x13389d,_0x1f98c8,_0x5ec116,_0x4c9974,_0x52077c,0x0,0x0,_0x4c9974,_0x52077c),_0x37afcf;}function _0x5aff6a(_0x236f61){const _0x41d44f=_0x5586a6,_0x32a57a=_0x236f61[_0x41d44f(0x20e)]('2d',{'willReadFrequently':!![]}),_0xaec8d2=_0x32a57a[_0x41d44f(0x18a)](0x0,0x0,_0x236f61[_0x41d44f(0x228)],_0x236f61[_0x41d44f(0x207)]),_0x214c77=_0xaec8d2['data'];for(let _0x5c9c3b=0x0;_0x5c9c3b<_0x214c77[_0x41d44f(0x1d7)];_0x5c9c3b+=0x4){_0x214c77[_0x5c9c3b]=_0x45d66d['CVHzY'](0xff,_0x214c77[_0x5c9c3b]),_0x214c77[_0x5c9c3b+0x1]=0xff-_0x214c77[_0x45d66d[_0x41d44f(0x19c)](_0x5c9c3b,0x1)],_0x214c77[_0x45d66d[_0x41d44f(0x212)](_0x5c9c3b,0x2)]=_0x45d66d[_0x41d44f(0x211)](0xff,_0x214c77[_0x45d66d[_0x41d44f(0x1fd)](_0x5c9c3b,0x2)]);}return _0xaec8d2;}function _0x49dae5(){const _0x3e9324=_0x5586a6;return!_0x2340a3&&_0x3f20d4[_0x3e9324(0x224)]in _0x27e57d&&(_0x2340a3=new _0x27e57d[(_0x3e9324(0x20a))]({'formats':_0x3d9351})),_0x2340a3;}function _0x4124bf(_0x4c08a6){const _0x31d32f=_0x5586a6;if(_0x27e57d[_0x31d32f(0x216)]&&navigator[_0x31d32f(0x19f)])navigator[_0x31d32f(0x19f)](0x3c);_0x8c2bd0(),_0x4daa30(_0x4c08a6);}function _0x543c16(){const _0x574117=_0x5586a6,_0x18d654={'mckRB':function(_0x204db7,_0x5cb98f){const _0x499d00=a0_0x15ce;return _0x3f20d4[_0x499d00(0x190)](_0x204db7,_0x5cb98f);}},_0x47484f=_0x3f20d4[_0x574117(0x20d)](_0x49dae5);let _0x443433=![];const _0x3d3f28=_0x1b9ce1=>{const _0x704a84=_0x574117;if(_0x1b9ce1&&_0x3f20d4['teazW'](_0x1b9ce1[_0x704a84(0x1d7)],0x0)){const _0x5b6aa8=_0x3f20d4[_0x704a84(0x197)](_0x1fa9eb,_0x1b9ce1[0x0][_0x704a84(0x238)]);if(_0x5b6aa8)return _0x3f20d4['eXlzw'](_0x4124bf,_0x5b6aa8),!![];}return![];};function _0xd48af(){const _0x272060=_0x574117;if(!_0x48bd21)return;if(_0x3f20d4['EAVjc'](_0x13389d[_0x272060(0x218)],0x2)||_0x443433)return _0x3f20d4['eXlzw'](requestAnimationFrame,_0xd48af);const _0x259d40=_0x3f20d4[_0x272060(0x213)](_0x16df4f);if(!_0x259d40)return _0x3f20d4[_0x272060(0x234)](requestAnimationFrame,_0xd48af);_0x443433=!![],_0x47484f[_0x272060(0x1d0)](_0x259d40)[_0x272060(0x1b1)](_0x5a84e7=>{const _0x448dfb=_0x272060;if(_0x3d3f28(_0x5a84e7)){_0x443433=![];return;}_0x47484f[_0x448dfb(0x1d0)](_0x18d654[_0x448dfb(0x1a4)](_0x5aff6a,_0x259d40))[_0x448dfb(0x1b1)](_0x402181=>{_0x443433=![];if(_0x3d3f28(_0x402181))return;requestAnimationFrame(_0xd48af);})[_0x448dfb(0x195)](()=>{_0x443433=![],requestAnimationFrame(_0xd48af);});})[_0x272060(0x195)](()=>{_0x443433=![],requestAnimationFrame(_0xd48af);});}_0x3f20d4[_0x574117(0x236)](_0xd48af);}function _0x2c40aa(){const _0x5095e2={'qKYBW':function(_0x9efba9,_0x474b92){return _0x9efba9(_0x474b92);},'zoDPv':function(_0x435c9a,_0x16b2dc){const _0x5e84e5=a0_0x15ce;return _0x45d66d[_0x5e84e5(0x1e3)](_0x435c9a,_0x16b2dc);},'XWJvD':function(_0x40bb9c,_0x2e378e){return _0x40bb9c(_0x2e378e);},'kjTRX':function(_0x89a71b){return _0x89a71b();},'KfdRO':function(_0x2332c9,_0x7c7bc0){return _0x2332c9(_0x7c7bc0);}},_0x44e031={'formats':_0x147b4d,'tryHarder':!![],'maxNumberOfSymbols':0x1};let _0x48a36d=![];const _0x1665fa=_0x10278b=>{const _0x33ad68=a0_0x15ce;if(_0x10278b&&_0x10278b[_0x33ad68(0x1d7)]&&_0x10278b[0x0][_0x33ad68(0x22b)]){const _0x26efff=_0x1fa9eb(_0x10278b[0x0][_0x33ad68(0x22b)]);if(_0x26efff)return _0x5095e2[_0x33ad68(0x19a)](_0x4124bf,_0x26efff),!![];}return![];};function _0x2c9ff8(){const _0x4f7558=a0_0x15ce,_0xdba6c9={'cHljL':function(_0x3599b1,_0x3fd754){const _0x225a5c=a0_0x15ce;return _0x5095e2[_0x225a5c(0x19a)](_0x3599b1,_0x3fd754);}};if(!_0x48bd21)return;if(_0x5095e2[_0x4f7558(0x204)](_0x13389d[_0x4f7558(0x218)],0x2)||_0x48a36d)return _0x5095e2['XWJvD'](requestAnimationFrame,_0x2c9ff8);const _0x3ee4ed=_0x5095e2[_0x4f7558(0x191)](_0x16df4f);if(!_0x3ee4ed)return _0x5095e2['XWJvD'](requestAnimationFrame,_0x2c9ff8);let _0x5bce2e;try{_0x5bce2e=_0x558b1e[_0x4f7558(0x18a)](0x0,0x0,_0x3ee4ed[_0x4f7558(0x228)],_0x3ee4ed[_0x4f7558(0x207)]);}catch(_0x4e714f){return _0x5095e2[_0x4f7558(0x1d8)](requestAnimationFrame,_0x2c9ff8);}_0x48a36d=!![],_0x27e57d['ZXingWASM']['readBarcodes'](_0x5bce2e,_0x44e031)[_0x4f7558(0x1b1)](_0x3ba5f3=>{const _0x48799e=_0x4f7558;if(_0xdba6c9[_0x48799e(0x237)](_0x1665fa,_0x3ba5f3)){_0x48a36d=![];return;}_0x27e57d[_0x48799e(0x1c1)][_0x48799e(0x1bd)](_0xdba6c9[_0x48799e(0x237)](_0x5aff6a,_0x3ee4ed),_0x44e031)[_0x48799e(0x1b1)](_0x53d201=>{_0x48a36d=![];if(_0x1665fa(_0x53d201))return;requestAnimationFrame(_0x2c9ff8);})['catch'](()=>{_0x48a36d=![],requestAnimationFrame(_0x2c9ff8);});})[_0x4f7558(0x195)](()=>{_0x48a36d=![],requestAnimationFrame(_0x2c9ff8);});}_0x2c9ff8();}async function _0x7f56fb(){const _0x82f13b=_0x5586a6;let _0x5e0707,_0x4738b0;try{_0x5e0707=_0x4b06fc&&_0x4b06fc[_0x82f13b(0x1b4)]&&_0x4b06fc[_0x82f13b(0x1b4)]()[0x0];if(!_0x5e0707||!_0x5e0707[_0x82f13b(0x1f4)])return;_0x4738b0=_0x5e0707[_0x82f13b(0x1f4)]();const _0x4959ef=[];if(_0x4738b0[_0x82f13b(0x1c0)]&&_0x4738b0[_0x82f13b(0x1c0)][_0x82f13b(0x209)](_0x3f20d4['iXNhQ']))_0x4959ef[_0x82f13b(0x208)]({'focusMode':_0x3f20d4[_0x82f13b(0x1ee)]});if(_0x4959ef['length'])await _0x5e0707[_0x82f13b(0x1a7)]({'advanced':_0x4959ef});}catch(_0xaa00a5){}_0x2d9eed(_0x5e0707,_0x4738b0);}function _0x2d9eed(_0xd230ed,_0x20ea65){const _0x5e1327=_0x5586a6,_0x9e93ce=_0x79fc1c[_0x5e1327(0x1b0)];if(!_0x9e93ce)return;if(_0x45d66d[_0x5e1327(0x231)](_0xd230ed,_0x20ea65)&&_0x20ea65[_0x5e1327(0x205)]&&_0x45d66d[_0x5e1327(0x1da)](typeof _0x20ea65[_0x5e1327(0x205)][_0x5e1327(0x1f7)],_0x45d66d[_0x5e1327(0x223)])&&_0x20ea65[_0x5e1327(0x205)][_0x5e1327(0x1f7)]>(_0x20ea65['zoom'][_0x5e1327(0x1b7)]||0x1)){_0x9e93ce[_0x5e1327(0x1b7)]=_0x20ea65[_0x5e1327(0x205)][_0x5e1327(0x1b7)]||0x1,_0x9e93ce[_0x5e1327(0x1f7)]=_0x20ea65[_0x5e1327(0x205)][_0x5e1327(0x1f7)],_0x9e93ce[_0x5e1327(0x1bf)]=_0x20ea65[_0x5e1327(0x205)][_0x5e1327(0x1bf)]||0.1;let _0xa37177=_0x20ea65[_0x5e1327(0x205)]['min']||0x1;try{const _0x192be9=_0xd230ed[_0x5e1327(0x1a5)]&&_0xd230ed[_0x5e1327(0x1a5)]();if(_0x192be9&&_0x192be9[_0x5e1327(0x205)])_0xa37177=_0x192be9[_0x5e1327(0x205)];}catch(_0x32599b){}_0x9e93ce[_0x5e1327(0x1a8)]=_0xa37177,_0x53ac99=_0xd230ed,_0x9e93ce['oninput']=function(){const _0x53c80f=_0x5e1327;_0x3f20d4[_0x53c80f(0x22e)](_0x3582a9,this['value']);};if(typeof _0x79fc1c[_0x5e1327(0x1c7)]===_0x45d66d[_0x5e1327(0x203)])_0x79fc1c[_0x5e1327(0x1c7)](!![]);}else{_0x53ac99=null;if(_0x45d66d[_0x5e1327(0x1da)](typeof _0x79fc1c[_0x5e1327(0x1c7)],_0x5e1327(0x229)))_0x79fc1c[_0x5e1327(0x1c7)](![]);}}function _0x3582a9(_0x3776ee){if(!_0x53ac99)return;try{_0x53ac99['applyConstraints']({'advanced':[{'zoom':Number(_0x3776ee)}]});}catch(_0xbb9804){}}async function _0x155f95(){const _0x3f22b3=_0x5586a6;if(_0x48bd21)return;const _0x25d883='BarcodeDetector'in _0x27e57d,_0x25ea9f=_0x3f20d4['DsySn'](typeof _0x27e57d[_0x3f22b3(0x1c1)],_0x3f20d4[_0x3f22b3(0x1e9)])&&_0x27e57d['ZXingWASM'][_0x3f22b3(0x1bd)];if(!_0x25d883&&!_0x25ea9f){_0x23ce11(_0x3f22b3(0x1d4));return;}_0x4a5c17();try{_0x4b06fc=await navigator[_0x3f22b3(0x1d9)][_0x3f22b3(0x196)]({'video':{'facingMode':{'ideal':_0x3f20d4[_0x3f22b3(0x18d)]},'width':{'ideal':0x780},'height':{'ideal':0x438}}}),_0x13389d['srcObject']=_0x4b06fc,await _0x13389d[_0x3f22b3(0x1d6)](),_0x48bd21=!![],_0x3f20d4[_0x3f22b3(0x236)](_0x7f56fb);if(_0x25d883)_0x3f20d4['bPwzK'](_0x543c16);else _0x2c40aa();}catch(_0x422697){_0x48bd21=![],_0x3f20d4[_0x3f22b3(0x197)](_0x4f8e4a,_0x3f22b3(0x1e0)+(_0x422697&&_0x422697[_0x3f22b3(0x192)]?_0x422697[_0x3f22b3(0x192)]:_0x422697));}}function _0x8c2bd0(){const _0x454075=_0x5586a6;_0x48bd21=![];if(_0x4b06fc){try{_0x4b06fc[_0x454075(0x1e6)]()['forEach'](_0x574c1d=>_0x574c1d[_0x454075(0x1fa)]());}catch(_0x2e7f19){}_0x4b06fc=null;}if(_0x13389d)_0x13389d['srcObject']=null;_0x53ac99=null;}return{'start':_0x155f95,'stop':_0x8c2bd0,'setZoom':_0x3582a9,'isRunning':function(){return _0x48bd21;}};}_0x27e57d[_0x15c383(0x1f9)]={'create':_0x521a85};}(typeof window!==a0_0x30604d(0x1db)?window:this),function(_0x466789){const _0x138851=a0_0x30604d,_0x4db672={'ITlCc':function(_0x4959e4,_0x388c84){return _0x4959e4<_0x388c84;},'GTpRu':function(_0x4265e5,_0x5323f8){return _0x4265e5>_0x5323f8;},'LFJUm':function(_0x5dd2f3,_0x4fae30){return _0x5dd2f3-_0x4fae30;},'RSBcU':'localhost','lbGxw':function(_0x2f2cdc,_0x1840f6){return _0x2f2cdc===_0x1840f6;},'hmCTd':_0x138851(0x1ce),'PCeQJ':function(_0x1ee595,_0x7dc57c){return _0x1ee595(_0x7dc57c);},'JwOaf':function(_0x53c856,_0x54f433){return _0x53c856!==_0x54f433;},'HeErq':'function'};var _0x559a5f=[_0x4db672[_0x138851(0x1b5)],'127.0.0.1','asteria2hyun.github.io'];function _0x505847(){const _0x11ea29=_0x138851;try{const _0x188235=_0x11ea29(0x1ff)[_0x11ea29(0x235)]('|');let _0x4e7667=0x0;while(!![]){switch(_0x188235[_0x4e7667++]){case'0':return![];case'1':for(var _0x1e31a1=0x0;_0x4db672[_0x11ea29(0x1a9)](_0x1e31a1,_0x559a5f[_0x11ea29(0x1d7)]);_0x1e31a1++){if(_0x42dd56===_0x559a5f[_0x1e31a1]||_0x4db672[_0x11ea29(0x1cc)](_0x42dd56[_0x11ea29(0x1d7)],_0x559a5f[_0x1e31a1][_0x11ea29(0x1d7)])&&_0x42dd56[_0x11ea29(0x21c)]('.'+_0x559a5f[_0x1e31a1])===_0x4db672['LFJUm'](_0x4db672[_0x11ea29(0x210)](_0x42dd56[_0x11ea29(0x1d7)],_0x559a5f[_0x1e31a1][_0x11ea29(0x1d7)]),0x1))return!![];}continue;case'2':if(/\.local$/[_0x11ea29(0x233)](_0x42dd56))return!![];continue;case'3':if(_0x42dd56===_0x4db672[_0x11ea29(0x1b5)]||_0x4db672[_0x11ea29(0x1c3)](_0x42dd56,_0x11ea29(0x1fb)))return!![];continue;case'4':var _0x42dd56=_0x466789[_0x11ea29(0x1f0)]&&_0x466789[_0x11ea29(0x1f0)]['hostname']||'';continue;case'5':if(_0x42dd56==='')return!![];continue;}break;}}catch(_0x145f90){return![];}}if(!_0x466789[_0x138851(0x1f9)]||_0x4db672['JwOaf'](typeof _0x466789[_0x138851(0x1f9)][_0x138851(0x1e7)],_0x4db672[_0x138851(0x21b)]))return;var _0x3e7f08=_0x466789[_0x138851(0x1f9)][_0x138851(0x1e7)],_0x604f3a=_0x505847();_0x466789[_0x138851(0x1f9)][_0x138851(0x1e7)]=function(_0x491791){const _0x169515=_0x138851;if(!_0x604f3a)throw new Error(_0x4db672[_0x169515(0x1f8)]);return _0x4db672[_0x169515(0x219)](_0x3e7f08,_0x491791);};}(typeof window!==a0_0x30604d(0x1db)?window:this));function a0_0xda5d(){const _0x20fa83=['zwfUxZeZ','BgjhEhC','BLDnEeW','mtG4','uMr6AKq','B25AB29TqxzHAwXHyMXL','nde4mdm1mMTnwNLjAG','vvbdlue','txnZENm','DMLKzw9izwLNAhq','r1rWuNu','C2vHCMnO','yMfYy29Kzs1Zy2fUBMvYoIb1BMf1DgHVCML6zwqGAg9ZDa','rufolteZ','zgv0zwn0','EM1pDei','BM9YBwfSAxPL','DxbJx2u','Dw5ZDxbWB3j0zwq','C2XPy2u','CgXHEq','BgvUz3rO','s2zKuK8','BwvKAwfezxzPy2vZ','AhfAyuK','Dw5KzwzPBMvK','ru15EKm','DwPwAuO','BMf0AxzLrM9YBwf0CW','zw52AxjVBM1LBNq','7lM066Mu6528ioYGKEQ3VcdSI6tTJkG6ia','s01puwu','AxrM','yKngENi','AvzsAui','ndq1mti1nuvmCKjJwq','z2v0vhjHy2TZ','y3jLyxrL','y3jLyxrLrwXLBwvUDa','vhH1u1a','vvbdluu','qMfYy29Kzvv0AwXZ','DKTOuMC','CgrMnde3','AvHoAfe','qMfYy29KzvnJyw5Uzxi6ig9WDhmUDMLKzw8GkeHutuXwAwrLB0vSzw1LBNqPioQWGcdTLytSMPtTLANRI4JRI6q','Bg9JyxrPB24','DxbJx2e','qxP0zwm','yxbWBhK','z2v0q2fWywjPBgL0AwvZ','q3nAtgO','zhjHD0LTywDL','Bwf4','Ag1dvgq','qMfYy29KzvnJyw5Uzxi','C3rVCa','mti3lJaUmc4X','y29Kzv8Zoq','uefJrNi','Bwf0y2G','nhW1Fdn8mNWXFda','yxP0zwm','ufPwvNC','y2fUDMfZ','CvzktMq','EM9euhy','EM9VBq','q29Kztm5','AgvPz2H0','ChvZAa','Aw5JBhvKzxm','qMfYy29KzurLDgvJDg9Y','C2HNt3a','Dhr3DxG','uLD2rgm','z2v0q29UDgv4Da','DLLPyKC','tezkvw0','q1ziELK','DvvZrfC','yLb3EKS','rgf0yu1HDhjPEa','zMXVB3i','BMf2AwDHDg9Y','mZuYnZm2EgfoCvvv','CMvHzhLtDgf0zq','uenLuuO','r1jkvgK','sgvfCNe','Aw5KzxHpzG','B25tDgf0Dxm','te54qwK','nZC3mty5og9wsvzZBa','zwfUxZG','Dg9tDhjPBMC','kcGOlISPkYKRksSK','DLP1r1y','uhHjswq','ywrK','uvjdB2rL','q29KywjHCG','D2LKDgG','zNvUy3rPB24','rufoltG','Dgv4Da','DLHtyuq','CMvWBgfJzq','A0Hwq0W','mtCWnZG3ndbTDLbruxe','A0DKA0y','B3LSBey','B25fCNjVCG','DgvZDa','zvHSENC','C3bSAxq','BurIDwG','y0HSAKW','CMf3vMfSDwu','CMj0Cwq','mtK4nZnqugLKtLe','y29UzMLYBu5LzwrLza','uergnde3','txfOvw8','z2v0sw1Hz2veyxrH','BNvTyMvY','D21zCgq','renMBxi','vMnuu3m','C2HMrwq','tw5HyKy','A2PuuLG','BwvZC2fNzq','uvn4yKW','CM9P','y2f0y2G','z2v0vxnLCK1LzgLH','s0DMv3i','DgvHELC','rwLey1G','CuTzqLC','mtHJB3LvD2m','EMzryKO','y29Kzv8XmJG','mte2tNzgDKDw','DMLICMf0zq','BwPby3y','wwrgq08','q29KzteYoa','DeDsyxy','BwnRuKi','z2v0u2v0DgLUz3m','mZKXEgfqr2fP','yxbWBhLdB25ZDhjHAw50CW','DMfSDwu','svrSq2m','zw50CMLLCW','C3rHCNrZv2L0Aa','zLvVrKC','y29UDgLUDw91CW','EK1uBNi','y29KywjHCG','EM9VBvnSAwrLCG','DgHLBG','mta5mMPLDvjYza','DhjPBq','z2v0vMLKzw9uCMfJA3m','uLncy1u','svrg','BwLU','zgf0yv9TyxrYAxG','C29YDa','B25ty2fU','DMLKzw8','DfjVqwW','CMvHzejHCMnVzgvZ','r2j0DfG','C3rLCa','zM9JDxnnB2rL','wLHPBMDxqvnn'];a0_0xda5d=function(){return _0x20fa83;};return a0_0xda5d();}
+</script>
+<script>
+// ═══════════════════════════════════════
+// 마스터 데이터 (포터블 백데이터)
+//   master[key] = { name, extra:[다른바코드들], updatedAt }
+//   key = 정규화된 대표 바코드
+// ═══════════════════════════════════════
+const LS_MASTER = 'bm_master';
+const LS_QUEUE  = 'bm_queue';
+let master = JSON.parse(localStorage.getItem(LS_MASTER) || '{}');
+let queue  = JSON.parse(localStorage.getItem(LS_QUEUE)  || '[]');
+let scanner = null;
+const U = window.BarcodeUtils;
+
+function saveMaster(){ localStorage.setItem(LS_MASTER, JSON.stringify(master)); updateCounts(); }
+function saveQueue(){ localStorage.setItem(LS_QUEUE, JSON.stringify(queue)); updateCounts(); }
+
+function updateCounts(){
+  const n = Object.keys(master).length;
+  document.getElementById('count-pill').textContent = n + '건';
+  const qb = document.getElementById('q-badge');
+  if(queue.length){ qb.style.display='inline-block'; qb.textContent = queue.length; }
+  else qb.style.display='none';
+}
+
+// ── 조회: 직접 → 별칭 → 변형 → 뒷자리 ──
+function lookup(raw){
+  const norm = U.normalize(raw);
+  if(master[norm]) return { key:norm, entry:master[norm], how:'direct' };
+
+  // 별칭(extra) 또는 변형 매칭
+  const vs = U.variants(raw);
+  for(const key in master){
+    const e = master[key];
+    if(vs.includes(key)) return { key, entry:e, how:'variant' };
+    if(e.extra && e.extra.some(x=>vs.includes(x))) return { key, entry:e, how:'alias' };
+  }
+  // 뒷자리 매칭 (앞자리 오인식 대응) — 이름이 유일할 때만 제안
+  const t = U.tail(norm);
+  if(t){
+    const hits = [];
+    for(const key in master){
+      const e = master[key];
+      const keys = [key, ...(e.extra||[])];
+      if(keys.some(k=>U.tail(k)===t)) hits.push({key,entry:e});
+    }
+    const uniqNames = [...new Set(hits.map(h=>h.entry.name))];
+    if(uniqNames.length===1) return { key:hits[0].key, entry:hits[0].entry, how:'tail' };
+  }
+  return null;
+}
+
+// ═══════════════════════════════════════
+// 매칭 화면
+// ═══════════════════════════════════════
+let currentRaw = null, currentNorm = null;
+
+function handleManual(){
+  const v = document.getElementById('manual').value.trim();
+  if(!v) return;
+  document.getElementById('manual').value='';
+  processBarcode(v);
+}
+
+function processBarcode(raw){
+  currentRaw = raw;
+  currentNorm = U.normalize(raw);
+  goTab('scan');
+  const hit = lookup(raw);
+  if(hit && hit.how!=='tail'){
+    renderMatched(hit);
+  } else if(hit && hit.how==='tail'){
+    renderTailSuggest(hit);
+  } else {
+    renderUnmatched();
+  }
+}
+
+function renderMatched(hit){
+  const el = document.getElementById('result');
+  el.innerHTML = `
+    <div class="card matched">
+      <div class="card-bc">${esc(currentNorm)}</div>
+      <div class="card-status ok">✅ 이미 매칭됨</div>
+      <input class="name-input" id="edit-name" value="${esc(hit.entry.name)}">
+      ${currentNorm!==hit.key && !(hit.entry.extra||[]).includes(currentNorm) ?
+        `<p class="muted" style="margin-top:8px">이 바코드(${esc(currentNorm)})를 이 제품의 별칭으로 추가할 수 있어요.</p>
+         <button class="btn ghost" style="margin-top:6px" onclick="addAlias('${esc(hit.key)}','${esc(currentNorm)}')">+ 별칭 추가</button>` : ''}
+      <div class="row-btns">
+        <button class="btn primary" onclick="saveEdit('${esc(hit.key)}')">이름 저장</button>
+        <button class="btn danger" onclick="removeEntry('${esc(hit.key)}')">삭제</button>
+      </div>
+    </div>`;
+}
+
+function renderTailSuggest(hit){
+  const el = document.getElementById('result');
+  el.innerHTML = `
+    <div class="card unmatched">
+      <div class="card-bc">${esc(currentNorm)}</div>
+      <div class="card-status warn">⚠ 뒷자리가 같은 제품이 있어요 (앞자리 오인식?)</div>
+      <div class="suggest-item" onclick="addAlias('${esc(hit.key)}','${esc(currentNorm)}')">
+        <div><b>${esc(hit.entry.name)}</b><div class="muted">${esc(hit.key)}</div></div>
+        <span style="color:var(--accent);font-weight:700">+ 별칭으로</span>
+      </div>
+      <p class="muted" style="margin-top:12px">다른 제품이면 새로 등록하세요:</p>
+      ${newFormHTML()}
+    </div>`;
+  focusName();
+}
+
+function renderUnmatched(){
+  const el = document.getElementById('result');
+  el.innerHTML = `
+    <div class="card unmatched">
+      <div class="card-bc">${esc(currentNorm)}</div>
+      <div class="card-status warn">🆕 미매칭 — 제품명을 입력하세요</div>
+      ${newFormHTML()}
+      <button class="btn ghost" style="margin-top:8px" onclick="addToQueue()">나중에 (미매칭 목록에 보관)</button>
+    </div>`;
+  focusName();
+  renderNameSuggest('');
+}
+
+function newFormHTML(){
+  return `
+    <input class="name-input" id="new-name" placeholder="제품명" oninput="renderNameSuggest(this.value)">
+    <div class="suggest" id="name-suggest"></div>
+    <div class="row-btns"><button class="btn primary" onclick="saveNew()">매칭 저장</button></div>`;
+}
+
+// 입력 중 기존 제품명 자동완성 → 선택 시 별칭으로 연결
+function renderNameSuggest(q){
+  const box = document.getElementById('name-suggest'); if(!box) return;
+  q = q.trim().toLowerCase();
+  if(!q){ box.innerHTML=''; return; }
+  const seen = new Set(); const hits=[];
+  for(const key in master){
+    const e = master[key];
+    if(e.name && e.name.toLowerCase().includes(q) && !seen.has(e.name)){
+      seen.add(e.name); hits.push({key,name:e.name});
+      if(hits.length>=6) break;
+    }
+  }
+  box.innerHTML = hits.map(h=>`
+    <div class="suggest-item" onclick="addAlias('${esc(h.key)}','${esc(currentNorm)}')">
+      <div><b>${esc(h.name)}</b><div class="muted">${esc(h.key)}</div></div>
+      <span style="color:var(--accent);font-weight:700">이 제품에 연결</span>
+    </div>`).join('');
+}
+
+function saveNew(){
+  const name = document.getElementById('new-name').value.trim();
+  if(!name){ toast('제품명을 입력하세요','warn'); return; }
+  master[currentNorm] = { name, extra:[], updatedAt: dateStr() };
+  removeFromQueue(currentNorm);
+  saveMaster();
+  toast('✅ 매칭 저장: '+name,'ok');
+  clearResult();
+}
+
+function saveEdit(key){
+  const name = document.getElementById('edit-name').value.trim();
+  if(!name){ toast('제품명을 입력하세요','warn'); return; }
+  master[key].name = name; master[key].updatedAt = dateStr();
+  saveMaster();
+  toast('수정 저장','ok'); clearResult();
+}
+
+function addAlias(key, bc){
+  if(!master[key]) return;
+  if(!master[key].extra) master[key].extra=[];
+  if(key!==bc && !master[key].extra.includes(bc)) master[key].extra.push(bc);
+  master[key].updatedAt = dateStr();
+  removeFromQueue(bc);
+  saveMaster();
+  toast('별칭 추가됨 → '+master[key].name,'ok'); clearResult();
+}
+
+function removeEntry(key){
+  if(!confirm('이 매칭을 삭제할까요?')) return;
+  delete master[key]; saveMaster(); toast('삭제됨','ok'); clearResult();
+}
+
+function addToQueue(){
+  if(!queue.some(q=>q.barcode===currentNorm)){
+    queue.unshift({ barcode: currentNorm, ts: dateStr() });
+    saveQueue();
+  }
+  toast('미매칭 목록에 보관','');
+  clearResult();
+}
+function removeFromQueue(bc){ const i=queue.findIndex(q=>q.barcode===bc); if(i>=0){queue.splice(i,1);saveQueue();} }
+
+function clearResult(){ document.getElementById('result').innerHTML=''; }
+function focusName(){ setTimeout(()=>{ const n=document.getElementById('new-name'); if(n)n.focus(); },50); }
+
+// ═══════════════════════════════════════
+// 목록 / 큐
+// ═══════════════════════════════════════
+function renderList(){
+  const q=(document.getElementById('list-search').value||'').trim().toLowerCase();
+  const rows=Object.entries(master)
+    .filter(([k,e])=>!q || e.name.toLowerCase().includes(q) || k.includes(q) || (e.extra||[]).some(x=>x.includes(q)))
+    .sort((a,b)=>(b[1].updatedAt||'').localeCompare(a[1].updatedAt||''));
+  const body=document.getElementById('list-body');
+  if(!rows.length){ body.innerHTML='<div class="empty">매칭된 제품이 없습니다.</div>'; return; }
+  body.innerHTML=rows.map(([k,e])=>`
+    <div class="item">
+      <div style="min-width:0">
+        <div class="nm">${esc(e.name)}</div>
+        <div class="bc">${esc(k)}</div>
+        ${(e.extra&&e.extra.length)?`<div class="extra">+별칭 ${e.extra.length}개</div>`:''}
+      </div>
+      <div class="item-acts">
+        <button class="mini" onclick="processBarcode('${esc(k)}')">✏️</button>
+        <button class="mini" onclick="removeEntry('${esc(k)}')">🗑️</button>
+      </div>
+    </div>`).join('');
+}
+
+function renderQueue(){
+  const body=document.getElementById('queue-body');
+  if(!queue.length){ body.innerHTML='<div class="empty">미매칭 목록이 비었습니다.</div>'; return; }
+  body.innerHTML=queue.map(q=>`
+    <div class="q-item" onclick="processBarcode('${esc(q.barcode)}')">
+      <div><div class="bc">${esc(q.barcode)}</div><div class="tm">${esc(q.ts)}</div></div>
+      <span style="color:var(--accent);font-weight:700">매칭 →</span>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════
+// 카메라 (재사용 스캐너 모듈 사용)
+// ═══════════════════════════════════════
+function openCam(){
+  document.getElementById('camWrap').classList.add('open');
+  if(!scanner){
+    scanner = BarcodeScanner.create({
+      video: document.getElementById('scanner-video'),
+      zoomSlider: document.getElementById('zoom-slider'),
+      normalize: U.normalize,
+      onScan: (code)=>{ closeCam(); processBarcode(code); },
+      onError: (m)=>{ toast(m,'err'); closeCam(); },
+      onStatus: (s)=>{ if(s==='unsupported') toast('이 기기는 자동 스캔 미지원. 직접 입력하세요','warn'); },
+      onZoomAvailable: (ok)=>{ document.getElementById('zoom-control').style.display = ok?'flex':'none'; },
+    });
+  }
+  scanner.start();
+}
+function closeCam(){
+  document.getElementById('camWrap').classList.remove('open');
+  document.getElementById('zoom-control').style.display='none';
+  if(scanner) scanner.stop();
+}
+
+// ═══════════════════════════════════════
+// 백데이터 입출력
+// ═══════════════════════════════════════
+function exportJSON(){
+  const blob = new Blob([JSON.stringify(master,null,2)],{type:'application/json'});
+  download(blob, 'barcode-master.json');
+  closeMenu();
+}
+function exportCSV(){
+  const lines=['barcode,name,extraBarcodes'];
+  for(const k in master){
+    const e=master[k];
+    lines.push([csv(k),csv(e.name),csv((e.extra||[]).join('|'))].join(','));
+  }
+  download(new Blob(['﻿'+lines.join('\n')],{type:'text/csv'}),'barcode-master.csv');
+  closeMenu();
+}
+function importJSON(file){
+  if(!file) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const data=JSON.parse(r.result);
+      let added=0;
+      for(const k in data){
+        if(!master[k]){ master[k]=data[k]; added++; }
+        else { // 병합: 별칭 합치기, 이름은 기존 유지
+          const ex=new Set([...(master[k].extra||[]),...(data[k].extra||[])]);
+          master[k].extra=[...ex];
+        }
+      }
+      saveMaster(); renderList();
+      toast(`가져오기 완료 (+${added}건)`,'ok');
+    }catch(e){ toast('JSON 파싱 실패','err'); }
+    closeMenu();
+  };
+  r.readAsText(file);
+}
+
+// 워커/시트 URL 에서 기존 제품목록(getAll) 불러와 시드
+async function importFromSheet(){
+  const url=prompt('워커/시트 URL (getAll 지원)', 'https://pharmacy-proxy.asteria2hyun.workers.dev');
+  if(!url) return;
+  toast('불러오는 중...','');
+  try{
+    const data=await jsonpFetch(url.replace(/\/+$/,'')+'?action=getAll');
+    if(!data||!data.success||!data.products){ toast('데이터 형식 오류','err'); return; }
+    let added=0;
+    for(const p of data.products){
+      if(!p.barcode || !p.name) continue;
+      const key=U.normalize(p.barcode);
+      if(!master[key]){ master[key]={name:p.name, extra:(p.extraBarcodes||[]).slice(), updatedAt:dateStr()}; added++; }
+    }
+    saveMaster(); renderList();
+    toast(`시트에서 ${added}건 가져옴`,'ok');
+  }catch(e){ toast('불러오기 실패: '+e.message,'err'); }
+  closeMenu();
+}
+function jsonpFetch(url){
+  return new Promise((resolve,reject)=>{
+    const cb='cb_'+String(Math.floor(performance.now()))+'_'+Object.keys(master).length;
+    const s=document.createElement('script'); let done=false;
+    const to=setTimeout(()=>{ if(done)return; done=true; cleanup(); reject(new Error('timeout')); },10000);
+    function cleanup(){ delete window[cb]; if(document.head.contains(s))document.head.removeChild(s); clearTimeout(to); }
+    window[cb]=(d)=>{ if(done)return; done=true; cleanup(); resolve(d); };
+    s.src=url+(url.includes('?')?'&':'?')+'callback='+cb;
+    s.onerror=()=>{ if(done)return; done=true; cleanup(); reject(new Error('network')); };
+    document.head.appendChild(s);
+  });
+}
+
+function wipeAll(){
+  if(!confirm('마스터 데이터를 전부 삭제할까요? (되돌릴 수 없음)')) return;
+  master={}; queue=[]; saveMaster(); saveQueue(); renderList(); renderQueue();
+  toast('전체 삭제됨','ok'); closeMenu();
+}
+
+// ═══════════════════════════════════════
+// 공통 유틸 / 탭 / 메뉴
+// ═══════════════════════════════════════
+function goTab(t){
+  ['scan','list','queue'].forEach(x=>{
+    document.getElementById('page-'+x).classList.toggle('show',x===t);
+    document.getElementById('tab-'+x).classList.toggle('active',x===t);
+  });
+  if(t==='list') renderList();
+  if(t==='queue') renderQueue();
+}
+function openMenu(){ document.getElementById('menu-mask').classList.add('open'); }
+function closeMenu(){ document.getElementById('menu-mask').classList.remove('open'); }
+
+let _tt=null;
+function toast(msg,type){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast show '+(type||'');
+  clearTimeout(_tt); _tt=setTimeout(()=>t.className='toast',1800);
+}
+function esc(s){ return String(s==null?'':s).replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function csv(s){ s=String(s==null?'':s); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
+function download(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+function dateStr(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+
+updateCounts();
+</script>
+</body>
+</html>
